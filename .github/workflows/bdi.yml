@@ -1,0 +1,105 @@
+name: Build Debora ISO
+
+on:
+  workflow_dispatch:
+    inputs:
+      distro_codename:
+        description: "Debian codename (e.g. bookworm, trixie)"
+        required: true
+        default: "bookworm"
+      distro_version:
+        description: "Debian version (e.g. 12.1)"
+        required: true
+        default: "12.1"
+      debora_version:
+        description: "Debora version (e.g. debora_12.1)"
+        required: true
+        default: "debora_12.1"
+
+jobs:
+  build-debora:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y live-build curl git ca-certificates xz-utils
+
+      - name: Set up live-build config
+        run: |
+          mkdir live-build
+          cd live-build
+          lb config \
+            --mode debian \
+            --distribution ${{ inputs.distro_codename }} \
+            --archive-areas "main contrib non-free non-free-firmware" \
+            --binary-images iso-hybrid \
+            --debian-installer live \
+            --bootappend-live "boot=live components"
+
+      - name: Customize live-build config
+        run: |
+          cd live-build
+          echo "deb http://deb.debian.org/debian ${{ inputs.distro_codename }} main contrib non-free non-free-firmware" > config/archives/debian.list.chroot
+          mkdir -p config/package-lists
+          echo "
+          linux-image-amd64
+          apparmor
+          grub-pc
+          grub-efi
+          tasksel
+          tasksel-data
+          " > config/package-lists/debora.list.chroot
+          mkdir -p config/includes.chroot/etc
+          echo debora > config/includes.chroot/etc/hostname
+          mkdir -p config/includes.chroot/usr/share/images
+          cp ../assets/logo.png config/includes.chroot/usr/share/images/debora.png || true
+
+      - name: Replace Debian branding
+        run: |
+          cd live-build
+          find config -type f -exec sed -i 's/Debian/Debora/g' {} + || true
+
+      - name: Use latest stable kernel from kernel.org
+        run: |
+          mkdir kernel && cd kernel
+          KERNEL_VER=$(curl -s https://www.kernel.org/ | grep -A1 'latest stable kernel' | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')
+          curl -LO https://cdn.kernel.org/pub/linux/kernel/v${KERNEL_VER%%.*}.x/linux-${KERNEL_VER}.tar.xz
+          tar -xf linux-${KERNEL_VER}.tar.xz
+          cd linux-${KERNEL_VER}
+          make defconfig
+          make -j$(nproc)
+          sudo make modules_install install
+
+      - name: Build ISO with live-build
+        run: |
+          cd live-build
+          sudo lb build
+
+      - name: Generate release notes
+        run: |
+          echo "# Debora ${{ inputs.debora_version }}" > release_notes.md
+          echo "- Based on Debian ${{ inputs.distro_version }} (${{ inputs.distro_codename }})" >> release_notes.md
+          echo "- Kernel: $(uname -r) (built from kernel.org)" >> release_notes.md
+          echo "- AppArmor enabled" >> release_notes.md
+          echo "- Non-free and contrib included" >> release_notes.md
+
+      - name: Upload ISO to release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ inputs.debora_version }}
+          name: Debora ${{ inputs.debora_version }}
+          body_path: release_notes.md
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: debora-iso
+          path: live-build/live-image-amd64.hybrid.iso

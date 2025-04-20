@@ -42,7 +42,8 @@ jobs:
             --binary-images iso-hybrid \
             --debian-installer live \
             --bootappend-live "boot=live components" \
-            --security false
+            --security false \
+            --apt-indices false
 
       - name: Customize live-build config
         run: |

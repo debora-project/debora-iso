@@ -68,7 +68,7 @@ jobs:
       - name: Use latest stable kernel from kernel.org
         run: |
           mkdir kernel && cd kernel
-          KERNEL_VER=$(curl -s https://www.kernel.org/ | grep -A1 'latest stable kernel' | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')
+          KERNEL_VER=$(curl -s https://www.kernel.org/finger_banner | grep 'The latest stable version of the Linux kernel is:' | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')
           if [ -z "$KERNEL_VER" ]; then
             echo "Ошибка: не удалось получить версию ядра."
             exit 1

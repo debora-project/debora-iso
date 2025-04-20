@@ -45,7 +45,11 @@ jobs:
       - name: Customize live-build config
         run: |
           cd live-build
-          echo "deb http://deb.debian.org/debian ${{ inputs.distro_codename }} main contrib non-free non-free-firmware" > config/archives/debian.list.chroot
+          cat <<EOF > config/archives/debian.list.chroot
+          deb http://deb.debian.org/debian ${{ inputs.distro_codename }} main contrib non-free non-free-firmware
+          deb http://deb.debian.org/debian ${{ inputs.distro_codename }}-updates main contrib non-free non-free-firmware
+          deb http://security.debian.org/debian-security ${{ inputs.distro_codename }}-security main contrib non-free non-free-firmware
+          EOF
           mkdir -p config/package-lists
           echo "
           linux-image-amd64

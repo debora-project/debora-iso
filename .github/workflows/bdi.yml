@@ -27,8 +27,9 @@ jobs:
       - name: Set up dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y live-build curl git ca-certificates xz-utils
-          sudo apt-get install -y build-essential libncurses-dev flex bison libssl-dev libelf-dev
+          sudo apt-get install -y live-build curl git ca-certificates xz-utils \
+            build-essential libncurses-dev flex bison libssl-dev libelf-dev \
+            fakeroot sudo wget
 
       - name: Clean and set up live-build config
         run: |
@@ -42,18 +43,23 @@ jobs:
             --binary-images iso-hybrid \
             --debian-installer live \
             --bootappend-live "boot=live components" \
-            --security false \
-            --apt-indices false
+            --security true \
+            --apt-indices false \
+            --linux-flavours amd64 \
+            --iso-application "Debora Linux" \
+            --iso-publisher "Debora Project" \
+            --iso-volume "Debora_${{ inputs.debora_version }}"
 
       - name: Customize live-build config
         run: |
           cd live-build
+          mkdir -p config/archives
           cat <<EOF > config/archives/debian.list.chroot
           deb http://deb.debian.org/debian ${{ inputs.distro_codename }} main contrib non-free non-free-firmware
           deb http://deb.debian.org/debian ${{ inputs.distro_codename }}-updates main contrib non-free non-free-firmware
           deb http://security.debian.org/debian-security ${{ inputs.distro_codename }}-security main contrib non-free non-free-firmware
           EOF
-          find config/archives -type f ! -name 'debian.list.chroot' -exec rm {} \;
+
           mkdir -p config/package-lists
           echo "
           linux-image-amd64
@@ -63,8 +69,10 @@ jobs:
           tasksel
           tasksel-data
           " > config/package-lists/debora.list.chroot
+
           mkdir -p config/includes.chroot/etc
           echo debora > config/includes.chroot/etc/hostname
+
           mkdir -p config/includes.chroot/usr/share/images
           cp ../assets/logo.png config/includes.chroot/usr/share/images/debora.png || true
 
@@ -73,20 +81,18 @@ jobs:
           cd live-build
           find config -type f -exec sed -i 's/Debian/Debora/g' {} + || true
 
-      - name: Use latest stable kernel from kernel.org
+      - name: Download and build latest stable kernel
         run: |
           mkdir kernel && cd kernel
           KERNEL_VER=$(curl -s https://www.kernel.org/finger_banner | grep 'The latest stable version of the Linux kernel is:' | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')
-          if [ -z "$KERNEL_VER" ]; then
-            echo "Ошибка: не удалось получить версию ядра."
-            exit 1
-          fi
+          echo "Latest stable kernel version: $KERNEL_VER"
           curl -LO https://cdn.kernel.org/pub/linux/kernel/v${KERNEL_VER%%.*}.x/linux-${KERNEL_VER}.tar.xz
           tar -xf linux-${KERNEL_VER}.tar.xz
           cd linux-${KERNEL_VER}
           make defconfig
           make -j$(nproc)
-          sudo make modules_install install
+          sudo make modules_install
+          sudo make install
 
       - name: Build ISO with live-build
         run: |
@@ -97,11 +103,11 @@ jobs:
         run: |
           echo "# Debora ${{ inputs.debora_version }}" > release_notes.md
           echo "- Based on Debian ${{ inputs.distro_version }} (${{ inputs.distro_codename }})" >> release_notes.md
-          echo "- Kernel: $(uname -r) (built from kernel.org)" >> release_notes.md
+          echo "- Kernel: $(ls /boot/vmlinuz-* | grep -oP '[0-9]+\.[0-9]+\.[0-9]+[^/]*$')" >> release_notes.md
           echo "- AppArmor enabled" >> release_notes.md
           echo "- Non-free and contrib included" >> release_notes.md
 
-      - name: Upload ISO to release
+      - name: Upload ISO to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ inputs.debora_version }}
@@ -111,7 +117,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload ISO artifact
+      - name: Upload ISO as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: debora-iso

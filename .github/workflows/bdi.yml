@@ -28,6 +28,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y live-build curl git ca-certificates xz-utils
+          sudo apt-get install -y build-essential libncurses-dev flex bison libssl-dev libelf-dev
 
       - name: Set up live-build config
         run: |
@@ -68,6 +69,10 @@ jobs:
         run: |
           mkdir kernel && cd kernel
           KERNEL_VER=$(curl -s https://www.kernel.org/ | grep -A1 'latest stable kernel' | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')
+          if [ -z "$KERNEL_VER" ]; then
+            echo "Ошибка: не удалось получить версию ядра."
+            exit 1
+          fi
           curl -LO https://cdn.kernel.org/pub/linux/kernel/v${KERNEL_VER%%.*}.x/linux-${KERNEL_VER}.tar.xz
           tar -xf linux-${KERNEL_VER}.tar.xz
           cd linux-${KERNEL_VER}
